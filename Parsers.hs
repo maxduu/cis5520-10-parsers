@@ -4,6 +4,9 @@ fulltitle: Parsing with Applicative Functors
 date: November 7, 2022
 ---
 -}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use lambda-case" #-}
 
 module Parsers where
 
@@ -169,7 +172,13 @@ char of a (nonempty) string and interprets it as an int in the range
 -}
 
 oneDigit :: Parser Int
-oneDigit = undefined
+oneDigit = P $ \s -> case s of
+  (c : cs) ->
+    let d = readMaybe [c]
+     in case d of
+          Just n -> Just (n, cs)
+          Nothing -> Nothing
+  [] -> Nothing
 
 {-
 ~~~~~{.haskell}
@@ -200,7 +209,9 @@ if the first character satisfies the predicate.
 -}
 
 satisfy :: (Char -> Bool) -> Parser Char
-satisfy f = undefined
+satisfy f = P $ \s -> case s of
+  (c : cs) -> if f c then Just (c, cs) else Nothing
+  _ -> Nothing
 
 {-
 ~~~~~{.haskell}
@@ -286,7 +297,9 @@ Of course! Like lists, the type constructor `Parser` is a functor.
 
 instance Functor Parser where
   fmap :: (a -> b) -> Parser a -> Parser b
-  fmap = undefined
+  fmap f pa = P $ \s -> do
+    (c, cs) <- doParse pa s
+    return (f c, cs)
 
 {-
 With `get`, `satisfy`, `filter`, and `fmap`, we now have a small library
@@ -330,7 +343,7 @@ Finally, finish this parser that should parse just one specific `Char`:
 -}
 
 char :: Char -> Parser Char
-char c = undefined
+char c = satisfy (== c)
 
 {-
 ~~~~~~~~~~~{.haskell}
@@ -368,7 +381,10 @@ other and returns the pair of resulting values...
 -}
 
 pairP0 :: Parser a -> Parser b -> Parser (a, b)
-pairP0 = undefined
+pairP0 pa pb = P $ \s -> do
+  (c1, cs) <- doParse pa s
+  (c2, cs') <- doParse pb cs
+  return ((c1, c2), cs')
 
 {-
 and use that to rewrite `twoChar` more elegantly like this:
@@ -543,7 +559,9 @@ see if you can figure out an appropriate definition of `(>>=)`.
 -}
 
 bindP :: Parser a -> (a -> Parser b) -> Parser b
-bindP = undefined
+bindP pa f = P $ \s -> do
+  (c, cs) <- doParse pa s
+  doParse (f c) cs
 
 {-
 Recursive Parsing
@@ -573,7 +591,7 @@ For fun, try to write `string` using `foldr` for the list recursion.
 -}
 
 string' :: String -> Parser String
-string' = foldr undefined undefined
+string' = foldr (liftA2 (:) . char) (pure "")
 
 {-
 Furthermore, we can use natural number recursion to write a parser that grabs
@@ -581,7 +599,7 @@ Furthermore, we can use natural number recursion to write a parser that grabs
 -}
 
 grabn :: Int -> Parser String
-grabn n = if n <= 0 then pure "" else (:) <$> get <*> grabn (n -1)
+grabn n = if n <= 0 then pure "" else (:) <$> get <*> grabn (n - 1)
 
 {-
 ~~~~~{.haskell}
@@ -772,7 +790,7 @@ implement a parser that parses zero or more occurrences of `p`, separated by
 -}
 
 sepBy :: Parser a -> Parser b -> Parser [a]
-sepBy p sep = undefined
+sepBy p sep = (:) <$> p <*> many (sep *> p) <|> pure []
 
 {-
 ~~~~~{.haskell}
